@@ -1,0 +1,682 @@
+---
+title: "Stats 206B HW 3"
+author: "Jordan Berninger"
+date: "3/3/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 6
+
+(a) We compute the upper and lower bounds for the 95% symmetric credible interval for $\theta$. Here, we can simply use the conjugacy properties of the binomial and beta distributions and the $qbeta$ function.
+
+```{r cars}
+n <- 10
+x <- 1
+alpha <- 1/2
+beta <- 1/2
+
+qbeta(p = c(0.025, 0.975), shape1 = alpha + x, shape2 = beta + n - x)
+```
+
+
+(b) Laplace approximation
+
+We code the log-likelihood function and use the $optim()$ function to find the value $\theta_0$ that maximizes the log-likelihood. We then get the variance of the Laplace appriximation from the inverse of the Hessian matrix.
+
+```{r}
+## Find Laplace Approximation for this data
+
+## make a function for the log-posterior distribution of theta (theta is the p parmameter for the binomial)
+q0 = function(theta){
+  a = 1/2
+  b = 1/2
+  n = 10
+  x = 1
+  log(choose(n,x)) + log(gamma(a+b)*(1/(gamma(a)*gamma(b)))) + (x+a-1)*log(theta) + (n-x+b-1)*log(1-theta)
+  }
+
+# find the posterior mode (th0) and covariance matrix (A)
+
+## initial value for theta
+begin = c(theta = 0.25)
+
+## maximize by setting control to negative
+LA_values = optim(begin, q0, control = list(fnscale = -1), hessian = TRUE)
+th0 = LA_values$par            
+cov_mat_A = LA_values$hessian
+cov_mat_Ainv = solve(-cov_mat_A)
+# this is the mean of the laplace normal approximation
+th0
+cov_mat_Ainv
+
+# density of laplace approximation to normal
+#rnorm(500, mean = th0, sd = cov_mat_Ainv[1,1]^0.5)
+#hist(rnorm(5000, mean = th0, sd = cov_mat_Ainv[1,1]^0.5), 
+#     prob=TRUE, breaks=20, main = "Samples for the Laplace Approximation")
+
+# these are the bounds for the 95% credible interval for theta
+qnorm(p = c(0.025, 0.975), mean = th0, sd = cov_mat_Ainv[1,1]^0.5)
+```
+
+We note that the 95% credible interval for theta from the Laplace approximation includes negative values, which is out of the bounds for the parameter. This is an issue with the Laplace approximation.
+
+(c) Monte Carlo Simulation
+
+For this data, we will implement a Metropolis Hastings model. We start with the log-likelihood for theta given the initial values. We then set an initial value for theta and the tuning variance.
+
+```{r}
+# specify hyperparameters
+n <- 10
+x <- 1
+alpha <- 1/2
+beta <- 1/2
+
+### function to evaluate log posterior 
+log_lik <- function(theta.tilde){
+    n <- n
+    x   <- x
+    a   <- alpha
+    b   <- beta
+    theta <- theta.tilde
+    log_lik <- log(gamma(a+b)/(gamma(a)*gamma(b))) + log(choose(n, x)) + (a+x)*log(theta) + (b+n-x)*log(1-theta)
+    return(log_lik)
+}
+
+###  Metropolis
+###  this step can be performed using the mcmc package in R
+
+niter <- 10000
+theta.store <- matrix(NA,niter,1)
+theta <- 1.0 ## initial value
+var.tuning <- 0.0001
+accept <- 0
+
+for(i in 1:niter){
+   prop <- rbeta(1, shape1 = 1/2, shape2 = 1/2)
+   acceptance.prob <- min(exp(log_lik(prop)-log_lik(log(theta))),1)
+   u <- runif(1)
+   if(u<acceptance.prob){
+       theta <- exp(prop)
+       accept <- accept+1
+   }else{
+      theta <- theta
+      accept <- accept
+    }
+   theta.store[i,] <- theta
+}
+
+plot(log(theta.store),type="l")
+# Raj's code did not have the log ^ but this makes it look correct?
+#abline(1,0,lwd=2,col="red")
+# Raj's code did not have the log ^ but this makes it look correct?
+accept/niter ## should be between 0.3 to 0.5
+```
+
+Our acceptance rate is in the corrcet ball park and our trace plot of the parameter seems to converge. We return the 95% credible interval and a histogram of the posterior distribution with the 95% credible interval bounds highlighted.
+
+```{r}
+quantile(log(theta.store), probs = c(0.025, 0.975))
+hist(log(theta.store))
+abline(v = quantile(log(theta.store), 0.975), col = "red")
+abline(v = quantile(log(theta.store), 0.025), col = "red")
+```
+
+
+(d) First we increase the sample size for the posterior credible interval and see that the interval gets tighter as the sample size increases.
+
+```{r}
+n <- 10
+x <- 1
+alpha <- 1/2
+beta <- 1/2
+
+qbeta(p = c(0.025, 0.975), shape1 = alpha + x, shape2 = beta + n - x)
+
+n <- 100
+x <- 10
+alpha <- 1/2
+beta <- 1/2
+
+qbeta(p = c(0.025, 0.975), shape1 = alpha + x, shape2 = beta + n - x)
+
+n <- 1000
+x <- 100
+alpha <- 1/2
+beta <- 1/2
+
+qbeta(p = c(0.025, 0.975), shape1 = alpha + x, shape2 = beta + n - x)
+```
+
+Next we increase sample size for the Laplace approximation.
+
+```{r}
+## Find Laplace Approximation for this data
+q0 = function(theta){
+  a = 1/2
+  b = 1/2
+  n = 10
+  x = 1
+  log(choose(n,x)) + log(gamma(a+b)*(1/(gamma(a)*gamma(b)))) + (x+a-1)*log(theta) + (n-x+b-1)*log(1-theta)
+  }
+
+# find the posterior mode (th0) and covariance matrix (A)
+
+## initial value for theta
+begin = c(theta = 0.25)
+
+## maximize by setting control to negative
+LA_values = optim(begin, q0, control = list(fnscale = -1), hessian = TRUE)
+th0 = LA_values$par            
+cov_mat_A = LA_values$hessian
+cov_mat_Ainv = solve(-cov_mat_A)
+# this is the mean of the laplace normal approximation
+#th0
+#cov_mat_Ainv
+
+# density of laplace approximation to normal
+#rnorm(500, mean = th0, sd = cov_mat_Ainv[1,1]^0.5)
+#hist(rnorm(5000, mean = th0, sd = cov_mat_Ainv[1,1]^0.5), 
+#     prob=TRUE, breaks=20, main = "Samples for the Laplace Approximation")
+
+# these are the bounds for the 95% credible interval for theta
+qnorm(p = c(0.025, 0.975), mean = th0, sd = cov_mat_Ainv[1,1]^0.5)
+## make a function for the log-posterior distribution of theta (theta is the p parmameter for the binomial)
+q0 = function(theta){
+  a = 1/2
+  b = 1/2
+  n = 100
+  x = 10
+  log(choose(n,x)) + log(gamma(a+b)*(1/(gamma(a)*gamma(b)))) + (x+a-1)*log(theta) + (n-x+b-1)*log(1-theta)
+  }
+
+# find the posterior mode (th0) and covariance matrix (A)
+
+## initial value for theta
+begin = c(theta = 0.25)
+
+## maximize by setting control to negative
+LA_values = optim(begin, q0, control = list(fnscale = -1), hessian = TRUE)
+th0 = LA_values$par            
+cov_mat_A = LA_values$hessian
+cov_mat_Ainv = solve(-cov_mat_A)
+# this is the mean of the laplace normal approximation
+#th0
+#cov_mat_Ainv
+
+# density of laplace approximation to normal
+#rnorm(500, mean = th0, sd = cov_mat_Ainv[1,1]^0.5)
+#hist(rnorm(5000, mean = th0, sd = cov_mat_Ainv[1,1]^0.5), 
+#     prob=TRUE, breaks=20, main = "Samples for the Laplace Approximation")
+
+# these are the bounds for the 95% credible interval for theta
+qnorm(p = c(0.025, 0.975), mean = th0, sd = cov_mat_Ainv[1,1]^0.5)
+
+## Find Laplace Approximation for this data
+
+## make a function for the log-posterior distribution of theta (theta is the p parmameter for the binomial)
+q0 = function(theta){
+  a = 1/2
+  b = 1/2
+  n = 1000
+  x = 100
+  log(choose(n,x)) + log(gamma(a+b)*(1/(gamma(a)*gamma(b)))) + (x+a-1)*log(theta) + (n-x+b-1)*log(1-theta)
+  }
+
+# find the posterior mode (th0) and covariance matrix (A)
+
+## initial value for theta
+begin = c(theta = 0.25)
+
+## maximize by setting control to negative
+LA_values = optim(begin, q0, control = list(fnscale = -1), hessian = TRUE)
+th0 = LA_values$par            
+cov_mat_A = LA_values$hessian
+cov_mat_Ainv = solve(-cov_mat_A)
+# this is the mean of the laplace normal approximation
+#th0
+#cov_mat_Ainv
+
+# density of laplace approximation to normal
+#rnorm(500, mean = th0, sd = cov_mat_Ainv[1,1]^0.5)
+#hist(rnorm(5000, mean = th0, sd = cov_mat_Ainv[1,1]^0.5), 
+#     prob=TRUE, breaks=20, main = "Samples for the Laplace Approximation")
+
+# these are the bounds for the 95% credible interval for theta
+qnorm(p = c(0.025, 0.975), mean = th0, sd = cov_mat_Ainv[1,1]^0.5)
+```
+
+Again, we see that the 95% confidence interval for theta gets tighter as the sample size increases. We also see that for n = 100, n = 1000, the credible interval does not include negative values.
+
+Now we increase the sample size for the MCMC method:
+
+```{r}
+n <- 10
+x <- 1
+alpha <- 1/2
+beta <- 1/2
+
+### function to evaluate log posterior 
+log_lik <- function(theta.tilde){
+    n <- n
+    x   <- x
+    a   <- alpha
+    b   <- beta
+    theta <- theta.tilde
+    log_lik <- log(gamma(a+b)/(gamma(a)*gamma(b))) + log(choose(n, x)) + (a+x)*log(theta) + (b+n-x)*log(1-theta)
+    return(log_lik)
+}
+
+###  Metropolis
+###  this step can be performed using the mcmc package in R
+
+niter <- 10000
+theta.store <- matrix(NA,niter,1)
+theta <- 1.0 ## initial value
+var.tuning <- 0.05
+accept <- 0
+
+for(i in 1:niter){
+   prop <- rbeta(1, shape1 = 1/2, shape2 = 1/2)
+   acceptance.prob <- min(exp(log_lik(prop)-log_lik(log(theta))),1)
+   u <- runif(1)
+   if(u<acceptance.prob){
+       theta <- exp(prop)
+       accept <- accept+1
+   }else{
+      theta <- theta
+      accept <- accept
+    }
+   theta.store[i,] <- theta
+}
+
+#plot(log(theta.store),type="l")
+# Raj's code did not have the log ^ but this makes it look correct?
+#abline(1,0,lwd=2,col="red")
+
+quantile(log(theta.store), probs = c(0.025, 0.975))
+# specify hyperparameters
+n <- 100
+x <- 10
+alpha <- 1/2
+beta <- 1/2
+
+## this is just the log likelihood for the prior?
+## not a part of Raj's script
+
+### function to evaluate log posterior 
+log_lik <- function(theta.tilde){
+    n <- n
+    x   <- x
+    a   <- alpha
+    b   <- beta
+    theta <- theta.tilde
+    log_lik <- log(gamma(a+b)/(gamma(a)*gamma(b))) + log(choose(n, x)) + (a+x)*log(theta) + (b+n-x)*log(1-theta)
+    return(log_lik)
+}
+
+###  Metropolis
+###  this step can be performed using the mcmc package in R
+
+niter <- 10000
+theta.store <- matrix(NA,niter,1)
+theta <- 1.0 ## initial value
+var.tuning <- 0.05
+accept <- 0
+
+for(i in 1:niter){
+   prop <- rbeta(1, shape1 = 1/2, shape2 = 1/2)
+   acceptance.prob <- min(exp(log_lik(prop)-log_lik(log(theta))),1)
+   u <- runif(1)
+   if(u<acceptance.prob){
+       theta <- exp(prop)
+       accept <- accept+1
+   }else{
+      theta <- theta
+      accept <- accept
+    }
+   theta.store[i,] <- theta
+}
+
+#plot(log(theta.store),type="l")
+# Raj's code did not have the log ^ but this makes it look correct?
+#abline(1,0,lwd=2,col="red")
+
+quantile(log(theta.store), probs = c(0.025, 0.975))
+# Raj's code did not have the log ^ but this makes it look correct?
+#accept/niter ## should be between 0.3 to 0.5
+
+n <- 1000
+x <- 100
+alpha <- 1/2
+beta <- 1/2
+
+### function to evaluate log posterior 
+log_lik <- function(theta.tilde){
+    n <- n
+    x   <- x
+    a   <- alpha
+    b   <- beta
+    theta <- theta.tilde
+    log_lik <- log(gamma(a+b)/(gamma(a)*gamma(b))) + log(choose(n, x)) + (a+x)*log(theta) + (b+n-x)*log(1-theta)
+    return(log_lik)
+}
+
+###  Metropolis
+###  this step can be performed using the mcmc package in R
+
+niter <- 10000
+theta.store <- matrix(NA,niter,1)
+theta <- 1.0 ## initial value
+var.tuning <- 0.05
+accept <- 0
+
+for(i in 1:niter){
+   prop <- rbeta(1, shape1 = 1/2, shape2 = 1/2)
+   acceptance.prob <- min(exp(log_lik(prop)-log_lik(log(theta))),1)
+   u <- runif(1)
+   if(u<acceptance.prob){
+       theta <- exp(prop)
+       accept <- accept+1
+   }else{
+      theta <- theta
+      accept <- accept
+    }
+   theta.store[i,] <- theta
+}
+
+#plot(log(theta.store),type="l")
+# Raj's code did not have the log ^ but this makes it look correct?
+#abline(1,0,lwd=2,col="red")
+
+quantile(log(theta.store), probs = c(0.025, 0.975))
+# Raj's code did not have the log ^ but this makes it look correct?
+#accept/niter ## should be between 0.3 to 0.5
+```
+
+We see that a larger sample size produces a much tighter credible interval for the posterior distribution of the parameter for the all the methods. We also see that for the largest sample size (n = 1000) all 3 methods produce a similar 95% credible interval. This result should not surprise us. We also note that with a large sample size (n = 10000) we have very little variation between the 95% credible intervals from the different methods.
+
+
+## Problem 7
+
+First, we want to sample 500 iid values from the Gumbel II distribution using the inverse of the c.d.f. and the $runif()$ function. The we code the log-likelihood function. Then we create a grid of values for the ranges of alpha and beta and estimate the density in each of these cells using a 2-D Riemann sum. We then plot the density plot.
+
+```{r}
+alpha <- 5
+beta <- 5
+
+unifs <- runif(n = 500, min = 0, max = 1)
+
+gumbel.cdf.inv <- function(u, alpha, beta){
+  (-log(u)/beta)^(-1/alpha)
+}
+x.observed <- gumbel.cdf.inv(unifs, alpha, beta)
+
+loglike_gumb <- function(a, b){500*log(a*b)+(-a-1)*sum(log(x.observed))-b*sum(x.observed^-a)}
+############################################################################
+## normalizing constant:
+## We now need to take the double integral with respect to a and b in order to obtain the
+## normalizing constant for the denominator
+
+base.dim <- 0.01
+base.x <- seq(3, 7, by=base.dim)
+base.y <- seq(3, 7, by=base.dim)
+
+
+# for all combinations of a and b - multiply to get area
+# store values into a matrix
+
+rectangles <- matrix(NA, nrow = length(base.x), ncol = length(base.y))
+
+for (i in 1:length(base.x)){
+  for (j in 1:length(base.y)){
+   
+    rectangles[i,j] = (base.dim^2)*exp(loglike_gumb(base.x[i], base.y[j]))
+
+  }
+}
+normalizing.constant <- sum(rectangles)
+
+## final posterior
+
+post_gumb <- rectangles/((base.dim^2)*normalizing.constant)
+max(post_gumb)
+
+library(plotly)
+
+layout(add_surface(plot_ly(x = base.x, y = base.y, z = post_gumb)), 
+       scene = list(xaxis = list(title = "a"), yaxis = list(title = "b"), 
+                    zaxis = list(title = "laplace-true")))
+```
+
+(b) For the Laplace Approximation, we use a similar method as the previous question. This time, our theta is a 2-D vector and we have to optimize both alpha and beta. The $optim()$ function does this nicely for us. We then get the inverse of the Hessian and use the resultant covariance matrix for the variance of the Laplace approximation, using the handy $nbvpdf.2()$ function.
+
+```{r}
+## Find Laplace Approximation to the normal
+
+## set posterior equal to q0
+## make theta a vector of parameters in order to use optim function
+
+q0 = function(theta){
+  a = theta[1]
+  b = theta[2]
+  500*log(a*b)+(-a-1)*sum(log(x.observed))-b*sum(x.observed^-a)
+  }
+
+# find the posterior mode (th0) and covariance matrix (A)
+
+## we want to optimize alpha and beta
+begin = c(a = 0.5, b = 0.5)
+
+## maximize by setting control to negative
+LA_values = optim(begin, q0, control = list(fnscale = -1), hessian = TRUE)
+th0 = LA_values$par            
+cov_mat_A = LA_values$hessian
+cov_mat_Ainv = solve(-cov_mat_A)
+#th0
+#cov_mat_Ainv
+
+# density of laplace approximation to normal
+
+#raj said to use nbvpdf to find density of posterior using laplace approximation
+
+# variance of alpha = var.X is in cov_mat_Ainv[1,1]
+# variance of beta = var.Y is cov_mat_Ainv[2,2]
+# cov of a, b = cov is either cov_mat_Ainv[1,2] or cov_mat_Ainv[2,1]
+## take multivariate normal and turns it into pdf
+library(bivariate)
+
+LA_approx = nbvpdf.2(th0[1],th0[2],var.X = cov_mat_Ainv[1,1], var.Y = cov_mat_Ainv[2,2], cov = cov_mat_Ainv[1,2])
+plot(LA_approx, TRUE, main="Laplace Approximation of Posterior",xlab="alpha",ylab="beta",zlab="density")
+plot.new()
+
+# compare eval.post and lap.approx
+base.dim <- 0.01
+base.x <- seq(3, 7, by=base.dim)
+base.y <- seq(3, 7, by=base.dim)
+
+height.la = matrix(NA, nrow = length(base.x), ncol = length(base.y))
+for(i in 1:length(base.x)){
+  for(j in 1:length(base.y)){
+    height.la[i,j] = LA_approx(base.x[i], base.y[j])
+  }
+}
+
+comp = height.la - post_gumb
+
+library(plotly)
+
+layout(add_surface(plot_ly(x = base.x, y = base.y, z = comp)), 
+       scene = list(xaxis = list(title = "a"), yaxis = list(title = "b"), zaxis = list(title = "Contrasts between Laplace and Gibbs")))
+```
+
+(c) Both the surfaces are unimodal and appear symmetric in the axes of both variables. For the Laplace approximation, the surve appears to be more diffuse. In the MCMC surface, there is a notiecably sharper decline in one of the dimensions. When we plot the differences between the 2 surfaces, we see that they disagree in two different locations, as seen by the positive and negative bump. It is worth noting that these disagreements are not orthogonal from the center along the parameter axes. The models do different jobs handling the covariance of the two parameters, it is not clear which model is superior from the plots.
+
+
+Problem 8
+
+(e) Simulate $n = 1000$ i.i.d.  observations from a N(5,1).  Fit the above model to these data assuming the following prior scenarios: (i) fairly informative priors around the true values of both parameters, (ii) informative prior on $\theta$ and vague on $\sigma^2$ (iii) informative prior on $\sigma^2$ and vague on $\theta$ (iv) vague on both parameters.  Specify the form of your posteriors in each case.
+
+
+We start with informative priors around the true values of $\sigma^2$ and $\theta$.
+
+```{r}
+library(dplyr)
+library(invgamma)
+x.observed <- rnorm(1000, 5, 1)
+
+## this is the MH code from above
+n <- 1000
+# for situation (i) we want informative priors for all the parameters
+a <- 1001
+b <- 1000
+th0 <- 5
+k0 <- 0.01
+
+par(mfrow = c(2,2))
+rinvgamma(1000, shape = a, rate = b) %>% density() %>% 
+  plot(main = "Prior for sigma-squared", xlab = "Sigma-squared") # prior for sigma squared
+rinvgamma(1000, shape = a + n/2, rate = b + 0.5*(n-1)*var(x.observed) + (n*(mean(x.observed) - th0)^2)/(2*(n*k0 + 1))) %>%
+  density() %>% plot(main = "Posterior for sigma-squared", xlab = "Sigma-squared")# p[osterior for sigma squared
+
+rnorm(1000, mean = th0, sd = k0*1) %>% density() %>% plot(main = "Prior on theta", xlab = "Theta")
+rnorm(1000, mean = (n*mean(x.observed) + th0/k0)/(n + 1/k0), sd = 1/(n + 1/k0)) %>% density() %>% 
+  plot(main = "Posterior on Theta", xlab = "Theta")
+
+```
+
+Now, we want an informative prior on $\theta$ and a vague prior on $\sigma^2$. We see here that the posterior distribution for $\sigma^2$ is only slightly more diffuse when we have an uninformative prior.
+
+```{r}
+x.observed <- rnorm(1000, 5, 1)
+
+## this is the MH code from above
+n <- 1000
+# for situation (i) we want informative priors for all the parameters
+a <- 0.1
+b <- 0.1
+th0 <- 5
+k0 <- 0.01
+
+par(mfrow = c(2,2))
+rinvgamma(1000, shape = a, rate = b) %>% density() %>% 
+  plot(main = "Prior for sigma-squared", xlab = "Sigma-squared") # prior for sigma squared
+rinvgamma(1000, shape = a + n/2, rate = b + 0.5*(n-1)*var(x.observed) + (n*(mean(x.observed) - th0)^2)/(2*(n*k0 + 1))) %>%
+  density() %>% plot(main = "Posterior for sigma-squared", xlab = "Sigma-squared")# p[osterior for sigma squared
+
+rnorm(1000, mean = th0, sd = k0*1) %>% density() %>% plot(main = "Prior on theta", xlab = "Theta")
+rnorm(1000, mean = (n*mean(x.observed) + th0/k0)/(n + 1/k0), sd = 1/(n + 1/k0)) %>% density() %>% 
+  plot(main = "Posterior on Theta", xlab = "Theta")
+
+```
+
+Now, we want an informative prior on $\sigma^2$ and a vague prior on $\theta$. We see here that the posterior distribution for $\theta$ is only slightly more diffuse when we have an uninformative prior.
+
+```{r}
+x.observed <- rnorm(1000, 5, 1)
+
+## this is the MH code from above
+n <- 1000
+# for situation (i) we want informative priors for all the parameters
+a <- 1001
+b <- 1000
+th0 <- 5
+k0 <- 100
+
+par(mfrow = c(2,2))
+rinvgamma(1000, shape = a, rate = b) %>% density() %>% 
+  plot(main = "Prior for sigma-squared", xlab = "Sigma-squared") # prior for sigma squared
+rinvgamma(1000, shape = a + n/2, rate = b + 0.5*(n-1)*var(x.observed) + (n*(mean(x.observed) - th0)^2)/(2*(n*k0 + 1))) %>%
+  density() %>% plot(main = "Posterior for sigma-squared", xlab = "Sigma-squared")# p[osterior for sigma squared
+
+rnorm(1000, mean = th0, sd = k0*1) %>% density() %>% plot(main = "Prior on theta", xlab = "Theta")
+rnorm(1000, mean = (n*mean(x.observed) + th0/k0)/(n + 1/k0), sd = 1/(n + 1/k0)) %>% density() %>% 
+  plot(main = "Posterior on Theta", xlab = "Theta")
+
+```
+
+Finally, we want uninformative priors on both of our parameters. Again, we see that the posterior distributions are slightly more diffuse, but are still decideldly centered on the true value of the parameters. This is an interesting result. The way we have structured this model allows us to have accurate inference on the underlying parameters even when we make weak assumptions on the prior distributions. It is worth noting that we have a healthy sample size of n = 1000 which allows us to recover the true parameters.
+
+```{r}
+x.observed <- rnorm(1000, 5, 1)
+
+## this is the MH code from above
+n <- 1000
+# for situation (i) we want informative priors for all the parameters
+a <- 0.1
+b <- 0.1
+th0 <- 5
+k0 <- 100
+
+par(mfrow = c(2,2))
+rinvgamma(1000, shape = a, rate = b) %>% density() %>% 
+  plot(main = "Prior for sigma-squared", xlab = "Sigma-squared") # prior for sigma squared
+rinvgamma(1000, shape = a + n/2, rate = b + 0.5*(n-1)*var(x.observed) + (n*(mean(x.observed) - th0)^2)/(2*(n*k0 + 1))) %>%
+  density() %>% plot(main = "Posterior for sigma-squared", xlab = "Sigma-squared")# p[osterior for sigma squared
+
+rnorm(1000, mean = th0, sd = k0*1) %>% density() %>% plot(main = "Prior on theta", xlab = "Theta")
+rnorm(1000, mean = (n*mean(x.observed) + th0/k0)/(n + 1/k0), sd = 1/(n + 1/k0)) %>% density() %>% 
+  plot(main = "Posterior on Theta", xlab = "Theta")
+
+```
+
+(f)  Assume that you are interested in estimating $\eta = \theta/\sigma$.  Develop a Monte Carlo algorithm for computing the posterior mean and a 95% credible interval for $\eta$.  Use the algorithmbto compute such quantities under all the prior scenarios described above.
+
+Since we have the full posterior conditional distributions for $\theta$ and $\sigma^2$ we can implement a Gibbs Sampler to sample from their join posterior distribution. Then, we sample from that distribution and compute $\eta_i = \theta_i/\sqrt{\sigma^2_i}$, and from these samples we will draw inference on the distribution of $\eta$.
+
+```{r}
+x.observed <- rnorm(1000, 5, 1)
+niter <- 10000
+theta.store <- rep(NA,niter)
+sigma.store <- rep(NA,niter)
+
+theta <- 3
+sigma <- 2
+n <- 1000
+# for situation (i) we want informative priors for all the parameters
+a <- 0.1
+b <- 0.1
+th0 <- 5
+k0 <- 100
+
+for(i in 1:niter){
+   theta <- rnorm(1, mean = (n*mean(x.observed) + th0/k0)/(n + 1/k0), sd = 1/(n + 1/k0))
+   sigma <- rinvgamma(1, shape = a + n/2, rate = b + 0.5*(n-1)*var(x.observed) + (n*(mean(x.observed) - th0)^2)/(2*(n*k0 + 1)))
+   theta.store[i] <- theta
+   sigma.store[i] <- sigma
+}
+
+
+par(mfrow = c(2,1))
+##plot(theta.store,type="l")
+#abline(1,0,lwd=2,col="red")
+#plot(sigma.store,type="l")
+#abline(0.5,0,lwd=2,col="red")
+eta.store <- theta.store/sqrt(sigma.store)
+
+plot(eta.store, type="l")
+```
+
+We see that this methods produces a convergent Markov Chain for $\eta$. We plot the histogram of the post burn-in values for $\eta$ and note that the posterior mean is around 5, which is expected since $\eta = \frac{\theta}{\sigma}$, ans we know that $\theta = 5$ and $\sigma^2 = 1$, so it looks like our Gibbs Sampler is correct here.
+
+```{r}
+burn.in <- 1000
+xpost.mean.eta <- mean(eta.store[seq(from=(burn.in+1), to=niter,by=1)])
+
+hist(eta.store[seq(from=(burn.in+1), to=niter,by=1)], 
+     main = "Posterior distribution of eta sample",
+     xlab = "eta")
+
+abline(v=quantile(eta.store[seq(from=(burn.in+1), to=niter,by=1)],0.025),
+       lty=2,lwd=2,col="green")
+abline(v=quantile(eta.store[seq(from=(burn.in+1), to=niter,by=1)],0.975),
+       lty=2,lwd=2,col="blue")
+```
+
+
+
